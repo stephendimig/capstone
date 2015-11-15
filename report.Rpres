@@ -1,0 +1,215 @@
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(jsonlite)
+library(tm)
+library(openNLP)
+library(caret)
+
+training <- read.csv("training.csv", stringsAsFactors=FALSE)
+combined <- read.csv("combined.csv", stringsAsFactors=FALSE)
+```
+
+
+Predicting Strengths and Weaknesses of a Business using Yelp Data
+========================================================
+author: Stephen Dimig
+date: `r date()`
+
+Introduction
+========================================================
+This report examines sampling techniques on review data from the Yelp Dataset Challenge data set to efficiently predict the strengths and weaknesses of a business. Prediction is needed due to heavy computational cost of text mining. 
+
+**Favorable Review** A review with a rating of 3.5 or above
+
+**Unfavorable Review** A review with a rating of 2.5 or below
+
+**Similarity Score** The number of words in the top 25 of the sampled data that are also present in the full data
+
+**Strength** A high frequency noun in the favorable reviews of a business
+
+**Weakness** A high frequency noun in the unfavorable reviews of a business
+
+
+Sampling Techniques
+========================================================
+**Maven** is a influential and trusted expert in a particular field. Mavens have lots of friends that all gave a business the exact same star rating.
+
+**Connected** is similar to a maven, but they are scored only on the number of friends that also reviewed the same business.
+
+**Popular** is a user who reviewed a business that has many friends.
+
+**Boosted** tries to predict a sampling technique that will yield the best results using machine learning techniques and apply the best technique to that business.
+
+**Random** is a randomly chosen sample of 75 reviews.
+
+
+Part of Speech Tagging with TM
+========================================================
+The R Text Mining Package with Natural Language Processing was used to tag parts of speech in a review to determine strengths and weaknesses.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, output=FALSE}
+number_raw_reviews <- 10
+
+business <- stream_in(file("my_business.json"), verbose=FALSE)
+reviews <- stream_in(file("my_reviews.json"), verbose=FALSE)
+
+extractPOS <- function(x, thisPOSregex) {
+    x <- as.String(x)
+    wordAnnotation <- annotate(x, list(Maxent_Sent_Token_Annotator(), Maxent_Word_Token_Annotator()))
+    POSAnnotation <- annotate(x, Maxent_POS_Tag_Annotator(), wordAnnotation)
+    POSwords <- subset(POSAnnotation, type == "word")
+    tags <- sapply(POSwords$features, '[[', "POS")
+    thisPOSindex <- grep(thisPOSregex, tags)
+    tokenizedAndTagged <- sprintf("%s/%s", x[POSwords][thisPOSindex], tags[thisPOSindex])
+    untokenizedAndTagged <- paste(tokenizedAndTagged, collapse = " ")
+    untokenizedAndTagged
+}
+good <- function(target_reviews, target_business) {
+    my_reviews <- target_reviews[target_reviews$stars > 3, ]
+    ssize <- ifelse(dim(my_reviews)[1]>=number_raw_reviews, number_raw_reviews, dim(my_reviews)[1])
+    review_sample <- my_reviews[sample(nrow(my_reviews), ssize), ]
+    review_text <- paste(review_sample$text, collapse=" ")
+    nouns_review_text <- gsub("/NN", "", extractPOS(review_text, ".*NN$"))
+    review_source <- VectorSource(nouns_review_text)
+    corpus <- Corpus(review_source)
+    corpus <- tm_map(corpus, content_transformer(tolower))
+    corpus <- tm_map(corpus, removePunctuation)
+    my_stopwords <- unlist(strsplit(tolower(paste(unlist(lapply(target_business$categories,  function (x) gsub("(.*)s$", "\\1", x))), collapse=" ")), " "))
+    
+    corpus <- tm_map(corpus, removeWords, c(stopwords("english"), "place", "spot", "way", my_stopwords))
+    dtm <- DocumentTermMatrix(corpus)
+    dtm2 <- as.matrix(dtm)
+    frequency <- colSums(dtm2)
+    frequency <- sort(frequency, decreasing=TRUE)
+    frequency
+}
+
+good <- good(reviews, business)
+
+wf <- data.frame(word=names(good), freq=good)   
+p <- ggplot(subset(wf, freq>1), aes(word, freq, fill=word))    
+p <- p + geom_bar(stat="identity")   
+p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))  
+p
+```
+
+Boosting
+========================================================
+Initial data runs showed that techniques such as Maven and Connected were clearly better on subsets of the data. Boosting attempts to predict the best technique using machine learning.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, output=FALSE}
+df <- cbind(training[training$rating >= 3.5, ], data.frame(1:nrow(training[training$rating >= 3.5, ])))
+colnames(df)[dim(df)[2]] <- "id"
+
+p1 <- ggplot(df, aes(name, x=id)) + 
+    scale_colour_manual("", breaks=c("Maven", "Conn", "Pop", "Random"), values=c('blue', 'orange', 'green', 'red')) + 
+    geom_line(aes(y = good.maven, colour="Maven")) +
+    geom_line(aes(y = good.conn, colour="Conn")) +
+    geom_line(aes(y = good.pop, colour="Pop")) +
+    geom_line(aes(y = good.random, colour="Random")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths >= 3.5")
+
+types <- c("Maven", "Conn", "Pop", "Random")
+values <- c(mean(df$good.maven), mean(df$good.conn), mean(df$good.pop), mean(df$good.random))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p2 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(df$good.random), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths >= 3.5")
+
+
+df <- cbind(training, data.frame(1:nrow(training)))
+colnames(df)[dim(df)[2]] <- "id"
+
+p3 <- ggplot(df, aes(name, x=id)) + 
+    scale_colour_manual("", breaks=c("Maven", "Conn", "Pop", "Random"), values=c('blue', 'orange', 'green', 'red')) + 
+    geom_line(aes(y = good.maven, colour="Maven")) +
+    geom_line(aes(y = good.conn, colour="Conn")) +
+    geom_line(aes(y = good.pop, colour="Pop")) +
+    geom_line(aes(y = good.random, colour="Random")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths")
+
+types <- c("Maven", "Conn", "Pop", "Random")
+values <- c(mean(df$good.maven), mean(df$good.conn), mean(df$good.pop), mean(df$good.random))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p4 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(df$good.random), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths")
+
+
+grid.arrange(p1, p2, p3, p4, ncol=2)
+```
+
+Results
+========================================================
+Results showed that only the Boosting technique beat random sampling for strengths and random sampling was actually best for weaknesses. More work could be done with the prediction model to improve Boosting.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, output=FALSE}
+df <- read.csv("combined.csv", stringsAsFactors=FALSE)
+
+p1 <- ggplot(df, aes(name, x=id)) + 
+    scale_colour_manual("", breaks=c("Boost", "Maven", "Conn", "Pop", "Random"), values=c('blue', 'orange', 'green', 'red', 'yellow')) +
+    geom_line(aes(y = good.boost, colour="Boost")) + 
+    geom_line(aes(y = good.maven, colour="Maven")) +
+    geom_line(aes(y = good.conn, colour="Conn")) +
+    geom_line(aes(y = good.pop, colour="Pop")) +
+    geom_line(aes(y = good.random, colour="Random")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths")
+
+types <- c("Boost", "Random", "Maven", "Conn", "Pop")
+values <- c(mean(df$good.boost), mean(df$good.random), mean(df$good.maven), mean(df$good.conn), mean(df$good.pop))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p2 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(df$good.boost), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Strengths")
+
+p3 <- ggplot(df, aes(name, x=id)) + 
+    scale_colour_manual("", breaks=c("Boost", "Maven", "Conn", "Pop", "Random"), values=c('blue', 'orange', 'green', 'red', 'yellow')) +
+    geom_line(aes(y = bad.boost, colour="Boost")) + 
+    geom_line(aes(y = bad.maven, colour="Maven")) +
+    geom_line(aes(y = bad.conn, colour="Conn")) +
+    geom_line(aes(y = bad.pop, colour="Pop")) +
+    geom_line(aes(y = bad.random, colour="Random")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Weakness")
+
+types <- c("Boost", "Random", "Maven", "Conn", "Pop")
+values <- c(mean(df$bad.boost), mean(df$bad.random), mean(df$bad.maven), mean(df$bad.conn), mean(df$bad.pop))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p4 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(df$bad.boost), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    ggtitle("Weakness")
+
+
+grid.arrange(p1, p2, p3, p4, ncol=2)
+```
+
+
