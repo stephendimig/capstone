@@ -1,12 +1,14 @@
 ---
-title: "Predicting Strengths and Weaknesses of a Business from Yelp Data"
+title: "Heuristic Approaches for the Prediction of Business Strengths"
 author: "Stephen Dimig"
 date: "November 12, 2015"
 output: word_document
 ---
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
-library("ggplot2")
+library(ggplot2)
+library(jpeg)
+library(grid)
 library(grid)
 library(gridExtra)
 library(jsonlite)
@@ -18,63 +20,52 @@ training <- read.csv("training.csv", stringsAsFactors=FALSE)
 combined <- read.csv("combined.csv", stringsAsFactors=FALSE)
 ```
 
-# Title
-Predicting Strengths and Weaknesses of a Business using Yelp Data
-
 ## Introduction
-This report focuses on using samples of of review data from the Yelp Dataset Challenge data set to efficiently predict the strengths and weaknesses of a business. Text mining encompasses a vast field of theoretical approaches and methods with one thing in
-common: text as input information [1]. The tm package in R provides a framework that allows text mining and natural language processing techniques to be applied to datasets in a convenient way. We will leverage the tm package to analyze review data from the Yelp Dataset Challenge data set to determine the part of speech of each word in a review and determine the most frequently used nouns associated with positive reviews of a business (defined as strengths) and negative reviews of a business (defined as weaknesses). 
+This report examines heuristic approaches to sample review data from the Yelp Dataset Challenge data and efficiently predict the strengths of a business. The tm package in R provides a framework that allows text mining and natural language processing techniques to be applied to datasets in a convenient way. We will leverage the tm package to analyze review data from the Yelp Dataset Challenge data set and determine the part of speech of each word in a review. The most frequently used nouns associated with positive reviews of a business are defined as strengths. 
 
-### Glosary of Terms
+### Glossary of Terms
 | __Term__  | __Definition__  |
 | -------------- | ----- |
-| tm   | A text mining package for R that supports natural language processing of texts |
+| tm   | A text mining package for R with NLP support |
 | NLP   | Natural Language Processing |
 | Favorable Review   | A review with a rating of 3.5 or above |
-| Unfavorable Review   | A review with a rating of 2.5 or below |
-| Similarity Score   | The number of words in the top 25 strengths or weaknesses in the sampled data that are also present in the full data  |
-| Stopword   | A commonly used word that is filtered out before processing review text |
-| Strength   | A high frequency noun in the favorable reviews of a business that is not a stopword |
-| Weakness   | A high frequency noun in the unfavorable reviews of a business that is not a stopword |
+| Similarity Score   | Percentage of words in the sampled data that are also in the full data  |
+| Stopword   | A common word that is filtered out before processing review text |
+| Strength   | A high frequency noun in the favorable reviews of a business |
 | Popular   | A user that reviews a business that has many friends |
-| Connected   | A user that reviews a business that also has many friends that reviewed the same business |
-| Maven   | A user that reviewed a business that also has many friends that reviewed the same business AND those friends gave that business the exact same star rating |
-| Boosted   | An attempt was made to boost the similarity scores by predicting which sampling technique was best for the given business. |
+| Connected   | A user with many friends that reviewed the same business |
+| Maven   | A user with many friends that reviewed the same business AND whose friends gave it the exact same rating |
+| Boosting   | Predicting which technique is best for a given business and using it to improve the overall score |
 | Random   | Randomly selected reviews about a business used as a baseline |
 
-So, why not just crunch all of the data (or a high percentage of it) to determine the strengths and weaknesses? Why try to predict or sample at all? As wonderful as the tm package is, it is very slow. Examining a large number of reviews to find the strengths of a business can take a very long time. A sample size of up to 500 reviews was used in this analysis to determine the true strengths and weaknesses and processing it could take up to an hour. The goal here is to determine a sampling technique tha can perform better than random so that you can pick a smaller number of samples (75 was used) to make a reasonably accurate prediction. The top 25 strengths and weaknesses idetified from the full data were then compared against the top 25 strengths and weaknesses identified by the sampled data to determine the similarity.
-
-| __Scenario__  | __Size__| __Time (in s)__  |
-| -------------- | ----- | ----- |
-| Strengths - Full   | 500 | `r summaryRprof("good_full.prof")$sampling.time` |
-| Strengths - Sample   | 75 | `r summaryRprof("good_sample.prof")$sampling.time` |
+So, why not just crunch all of the data (or a high percentage of it) to determine the strengths? As wonderful as the tm package is, it is very slow. Examining a large number of reviews can take a very long time. A maximum sample size of up to 500 reviews was used in this analysis to determine the strengths and processing took up to an hour (`r summaryRprof("good_full.prof")$sampling.time` s). The goal here is to determine a technique that can make a reasonably accurate prediction using a smaller number of samples which could take just minutes (`r summaryRprof("good_sample.prof")$sampling.time` s).
 
 ## Methods and Data
-### Examined Sampling Techniques 
-A **Maven** is a trusted expert in a particular field, who seeks to pass knowledge on to others. The word maven comes from Hebrew, meaning "one who understands", based on an accumulation of knowledge. I was introduced to the concept of a maven through Malcolm Gladwell's book "The Tipping Point". To find the mavens in this data we examined the friends of a user that reviewed a business to see if they gave the business the exact same star rating. The potential maven user got a point for each friend that gave the same rating. The mavens were then sorted and the top 75 reviews were used for sampling.
+### Heuristic Sampling Techniques 
+A **Maven** is a trusted expert in a particular field, who seeks to pass knowledge on to others. I was introduced to the concept of a maven through Malcolm Gladwell's book "The Tipping Point". To find the mavens in this data we examined the friends of a user that reviewed a business to see if they gave the business the exact same rating. The potential maven user got a point for each friend that gave the same rating. The mavens were then sorted and only the top maven reviews were used for sampling.
 
-A **Connected** user is similar to a maven, but they are scored only on the number of friends that also reviewed the same business with no weight given to the star rating. The connected users were sorted by number of connections and the top 75 reviews were used for sampling.
+A **Connected** user is similar to a maven, but they are scored only on the number of friends that also reviewed the same business with no weight given to the rating. The connected users were sorted by number of connections and only the top reviews were used for sampling.
 
-A **Popular** user is one who reviewed a business that has a large number of friends. The friends may or may not have also reviewed the business. The popular users were sorted by number of friends and the top 75 reviews were used for sampling.
+A **Popular** user is one who reviewed a business that has a large number of friends. The friends may or may not have also reviewed the business. The popular users were sorted by the total number of friends and the most reviews were used for sampling.
 
-A **Boosted** sample tries to predict the technique that will yield the best results using machine learning techniques and apply the best one to the business.
+**Boosting** attempts to predict the heuristic that will yield the best results (using machine learning techniques) and apply that one to the business.
 
-For control purposes, a **Random** sample of 75 reviews of the business taken was also used as a baseline.
+For control purposes, a **Random** sample of reviews of the business taken was also used as a baseline.
 
 ### Use of tm Package for Part of Speech Tagging
-Strengths and weaknesses are extracted from the review text in the following manner:
+Strengths are extracted from the review text in the following manner:
 
 * All of the review texts are concatenated and collapsed into a single text
 * All characters are converted to lower case
-* Common english stop words are removed
-* The category of the business is removed to keep it from showing up as a strength or weakness (ie; reviews of a Taco joint will mention Taco a lot)
+* Common English stopwords are removed
+* The category of the business is also removed to keep it from showing up as a strength or weakness (ie; reviews of a Taco joint will mention Taco a lot)
 * Each word is tagged with a part of speech
 * All non-nouns are removed
-* The word list is sorted in descending order by frequency
+* The word list is then sorted in descending order by frequency
 
 The result looks like this graphically.
 
-```{r, echo=FALSE,fig.height=4, fig.width=4, message=FALSE, warning=FALSE, output=FALSE}
+```{r, echo=FALSE,fig.height=2.5, fig.width=4, message=FALSE, warning=FALSE, output=FALSE}
 number_raw_reviews <- 10
 
 business <- stream_in(file("my_business.json"), verbose=FALSE)
@@ -120,41 +111,62 @@ p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
 p
 ```
 
-### Similarity Scores
-The similarity of a full run and an sampled run was determined very simply by determining how many nouns from the top 25 of the sampled text are in the top 25 words of the full text.
-
-```{r, echo=TRUE}
-similarity <- function(x, y) {
-    count <- 0
-    names_x <- names(x)
-    count <- sum(sapply(names(y), function(z) ifelse(z %in% names_x, 1, 0)))
-    100 * (count / length(y))
-}
-````
-
 ### Basic Processing
 The following procedure was used to test how well a sampling method performed. Random sampling is the control group. 
 
-![Foobar](basic_processing.jpg)
+```{r fig.width=2.5, fig.height=2.5,echo=FALSE}
 
+img <- readJPEG("basic_processing.jpg")
+ grid.raster(img)
+```
 
-### Modeling for Boosted Sampling
-Boosted sampling is performed due to a strange anamoly in the data where certain sampling techniques work well on certain data but perform only as well or below random sampling as a whole.
+### Boosting
+Boosting is performed due to a strange anamoly in the data where certain sampling techniques work well on subsets of data but perform only as well or below random sampling on the data as a whole.
 
-| __Technique__  | __Rating__| __Mean__  |
-| -------------- | ----- | ----- |
-| Maven - Strength   | >= 3.5 | `r mean(training$good.maven[training$rating >= 3.5])` |
-| Conn - Strength   | >= 3.5 | `r mean(training$good.conn[training$rating >= 3.5])` |
-| Pop - Strength   | >= 3.5 | `r mean(training$good.pop[training$rating >= 3.5])` |
-| Random - Strength   | >= 3.5 | `r mean(training$good.random[training$rating >= 3.5])` |
-| Maven - Strength   | All | `r mean(training$good.maven)` |
-| Conn - Strength   | All | `r mean(training$good.conn)` |
-| Pop - Strength   | All | `r mean(training$good.pop)` |
-| Random - Strength   | All | `r mean(training$good.random)` |
-| Maven - Strength   | <= 3.0 | `r mean(training$good.maven[training$rating <= 3.0])` |
-| Conn - Strength   | <= 3.0 | `r mean(training$good.conn[training$rating <= 3.0])` |
-| Pop - Strength   | <= 3.0 | `r mean(training$good.pop[training$rating <= 3.0])` |
-| Random - Strength   | <= 3.0 | `r mean(training$good.random[training$rating <= 3.0])` |
+```{r, echo=FALSE,fig.height=6, fig.width=6}
+df <- read.csv("combined.csv", stringsAsFactors=FALSE)
+
+types <- c("Maven", "Conn", "Pop", "Random")
+values <- c(mean(training$good.maven[training$rating >= 3.5]), mean(training$good.conn[training$rating >= 3.5]), mean(training$good.pop[training$rating >= 3.5]), mean(training$good.random[training$rating >= 3.5]))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p1 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(training$good.maven[training$rating >= 3.5]), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    theme(axis.text.x = element_text(angle = -90, vjust = 0.5)) + 
+    ggtitle("Rating >= 3.5")
+
+types <- c("Maven", "Conn", "Pop", "Random")
+values <- c(mean(training$good.maven[training$rating >= 3.0 & training$rating < 3.5]), mean(training$good.conn[training$rating >= 3.0 & training$rating < 3.5]), mean(training$good.pop[training$rating >= 3.0 & training$rating < 3.5]), mean(training$good.random[training$rating >= 3.0 & training$rating < 3.5]))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p2 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(training$good.conn[training$rating >= 3.0 & training$rating < 3.5]), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    theme(axis.text.x = element_text(angle = -90, vjust = 0.5)) + 
+    ggtitle("3.0 <= Rating < 3.5")
+
+types <- c("Maven", "Conn", "Pop", "Random")
+values <- c(mean(training$good.maven[training$rating >= 0.0 & training$rating < 3.0]), mean(training$good.conn[training$rating >= 0.0 & training$rating < 3.0]), mean(training$good.pop[training$rating >= 0.0 & training$rating < 3.0]), mean(training$good.random[training$rating >= 0.0 & training$rating < 3.0]))
+mydf <- data.frame(types, values)
+names(mydf) <- c("Type", "Value")
+
+p3 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
+    geom_bar(stat = "identity") +
+    geom_hline(aes(yintercept=mean(training$good.random[training$rating >= 0.0 & training$rating < 3.0]), colour="purple")) +
+    ylab("Similarity") +
+    xlab("") +
+    theme(axis.text.x = element_text(angle = -90, vjust = 0.5)) + 
+    ggtitle("0 <= Rating < 3.0")
+
+grid.arrange(p1, p2, p3, ncol=2)
+```
 
 
 As you can see the maven technique performs much better than random when the overall when the rating is over 3.5, but not any better overall, and worse when the start rating is less than 3.0. The following is an example of how the modeling was done using the RandomForest method.
@@ -162,8 +174,7 @@ As you can see the maven technique performs much better than random when the ove
 
 ```{r}
 create_models <- function() {    
-    trc <- trainControl(method="cv",number=5)
-    training <- read.csv("training.csv", stringsAsFactors=FALSE)
+    # ...
     good.mavenFit <- train(good.maven ~ rating + review.count + 
                                         good.review.count + 
                                         good.maven.count + 
@@ -172,42 +183,23 @@ create_models <- function() {
                            trc,
                            prox=TRUE,allowParallel=TRUE)
     
-
-    
-    bad.mavenFit <- train(bad.maven ~ rating + review.count + 
-                                      bad.review.count + 
-                                      bad.maven.count + 
-                                      bad.conn.count,
-                          data=training,method="rf",
-                          trc,
-                          prox=TRUE,allowParallel=TRUE)
-    
-    # Models are also trained for Connected, Popular, and Random 
-    # Sampling as well but not shown here.
+    # ...
 }
 ```
 
 ## Results
-Dissappointingly, the results show that no sampling techniques performs significantly better than random sampling over a representative mix of businesses. This is in spite of the fact that both the Maven and Connectected techniques perform significantly better on businesses that were rated at 3.5 or above.
+Disappointingly, the results show that no sampling techniques perform significantly better than random sampling over a representative mix of businesses. This is in spite of the fact that both the Maven and Connectected techniques perform significantly better on businesses that were rated at 3.5 or above and boosting was used to pick a good heuristic for the business.
 
-| __Technique__  | __Scenario__| __Mean__  |
-| -------------- | ----- | ----- |
-| Boosted   | Strength | `r mean(combined$good.boost)` |
-| Maven    | Strength | `r mean(combined$good.maven)` |
-| Conn    | Strength | `r mean(combined$good.conn)` |
-| Pop   | Strength | `r mean(combined$good.pop)` |
-| Random   | Strength | `r mean(combined$good.random)` |
-| Boosted   | Weakness | `r mean(combined$bad.boost)` |
-| Maven    | Weakness | `r mean(combined$bad.maven)` |
-| Conn    | Weakness | `r mean(combined$bad.conn)` |
-| Pop   | Weakness | `r mean(combined$bad.pop)` |
-| Random   | Weakness | `r mean(combined$bad.random)` |
+| __Technique__  | __Mean__  |
+| -------------- | ----- |
+| Boosting   | `r mean(combined$good.boost)` |
+| Maven    | `r mean(combined$good.maven)` |
+| Conn    | `r mean(combined$good.conn)` |
+| Pop   | `r mean(combined$good.pop)` |
+| Random   | `r mean(combined$good.random)` |
 
 
-The Boosted technique definitely shows promise and I think it could be tuned to outperform random sampling by a higher margin for strengths. The weaknesses are more variable, but even there boosting shows proise.
-
-
-```{r, echo=FALSE,fig.height=6, fig.width=6}
+```{r, echo=FALSE,fig.height=3, fig.width=6}
 df <- read.csv("combined.csv", stringsAsFactors=FALSE)
 
 p1 <- ggplot(df, aes(name, x=id)) + 
@@ -228,37 +220,15 @@ names(mydf) <- c("Type", "Value")
 
 p2 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
     geom_bar(stat = "identity") +
-    geom_hline(aes(yintercept=mean(df$good.random), colour="purple")) +
+    geom_hline(aes(yintercept=mean(df$good.boost), colour="purple")) +
     ylab("Similarity") +
     xlab("") +
+    theme(axis.text.x = element_text(angle = -90, vjust = 0.5)) + 
     ggtitle("Strengths")
 
-p3 <- ggplot(df, aes(name, x=id)) + 
-    scale_colour_manual("", breaks=c("Boost", "Maven", "Conn", "Pop", "Random"), values=c('blue', 'orange', 'green', 'red', 'yellow')) +
-    geom_line(aes(y = bad.boost, colour="Boost")) + 
-    geom_line(aes(y = bad.maven, colour="Maven")) +
-    geom_line(aes(y = bad.conn, colour="Conn")) +
-    geom_line(aes(y = bad.pop, colour="Pop")) +
-    geom_line(aes(y = bad.random, colour="Random")) +
-    ylab("Similarity") +
-    xlab("") +
-    ggtitle("Weakness")
 
-types <- c("Boost", "Random", "Maven", "Conn", "Pop")
-values <- c(mean(df$bad.boost), mean(df$bad.random), mean(df$bad.maven), mean(df$bad.conn), mean(df$bad.pop))
-mydf <- data.frame(types, values)
-names(mydf) <- c("Type", "Value")
-
-p4 <- ggplot(mydf, aes(x=factor(Type), y=Value, fill=Type)) +
-    geom_bar(stat = "identity") +
-    geom_hline(aes(yintercept=mean(df$bad.random), colour="purple")) +
-    ylab("Similarity") +
-    xlab("") +
-    ggtitle("Weakness")
-
-
-grid.arrange(p1, p2, p3, p4, ncol=2)
+grid.arrange(p1, p2, ncol=2)
 ```
 
 ## Discussion
-If I had to do this project over again, I would batch process the full data set with something like Hadoop to determine the top strengths and weaknesses of each business. R did not perform well performance wise on the computationally expensive data mining tasks. I had to run a task almost two days just to get the results for 50 businesses. This left ar less time to explore and tune the different sampling techniques. The results were mixed due to this even though the Maven and Connectected techniques showed great promise on certain subsets of the data. The Boosted approach could also be tuned slightly better with more runs and more features so that it could better predict which technique to use. Even though the results were not what I expected, the challenge of working on the data set was fun and I can definitely use the experince on future projects. 
+If I had to do this project over again, I would batch process the full data set with something like Hadoop to determine the top strengths and weaknesses of each business. R did not perform well performance wise on the computationally expensive data mining tasks. I had to run a task almost two full days just to get the results for 50 businesses. This left less time to explore and tune the different sampling techniques. Boosting could also be tuned with more runs and additional features so that it could better predict which heuristic to use. Even though the results were not what I expected, the challenge of working on the data set was fun and I can definitely use the experience on future projects. 

@@ -1,9 +1,25 @@
+#################################################################
+##
+## File:   commands.R
+## Author: Stephen Dimig
+## Description: This code is used to examine heuristic approaches to sample review data from the 
+## Yelp Dataset Challenge data and efficiently predict the strengths of a business. The tm package 
+## in R provides a framework that allows text mining and natural language processing techniques 
+## to be applied to datasets in a convenient way. We will leverage the tm package to analyze review 
+## data from the Yelp Dataset Challenge data set and determine the part of speech of each word in a 
+## review. The most frequently used nouns associated with positive reviews of a business are 
+## defined as strengths. 
+##
+#################################################################
+
+# Packages required for project
 install.packages("openNLP")
 install.packages("openNLPmodels.en")
 install.packages("tm")
 install.packages("jsonlite")
 install.packages("caret")
 
+# Libraries required for project
 library(ggplot2) 
 library(jsonlite)
 library(tm)
@@ -11,21 +27,34 @@ library(openNLP)
 library(openNLPmodels.en)
 library(caret)
 
+# Read YELP data in
 business <- stream_in(file("yelp_academic_dataset_business.json"))
 checkin <- stream_in(file("yelp_academic_dataset_checkin.json"))
 review <- stream_in(file("yelp_academic_dataset_review.json"))
 tip <- stream_in(file("yelp_academic_dataset_tip.json"))
 user <- stream_in(file("yelp_academic_dataset_user.json"))
 
+# Some Global constants
 number_raw_reviews <- 500
 word_list_size <- 25
 review_size <- 75
-
 MAVEN <- 1
 CONN <- 2
 POP <- 3
 RANDOM <- 4
 
+#################################################################
+##
+## Description: This method converts business names into business ids.
+##
+## Parameters:
+## testing - data.frame contatining testing data
+##
+## Return:
+## A data.frame object loaded with business ids, a count of the number of 
+## good reviews (strengths) and bad reviews (weaknesses).
+##
+#################################################################
 ids_from_testing <- function(testing)
 {
     names <- testing$name
@@ -55,6 +84,20 @@ ids_from_testing <- function(testing)
     df
 }
 
+#################################################################
+##
+## Description: This method corrects some columns of the training data to
+## include the total number of good reviews or bad reviews instead of just the 
+## number processed. The number processed always ended up as 75 so was no good
+## for prediction.
+##
+## Parameters:
+## None
+##
+## Return:
+## None
+##
+#################################################################
 correction <- function()
 {
     names <- training$name
@@ -80,6 +123,19 @@ correction <- function()
     }
 }
 
+#################################################################
+##
+## Description: This method finds businesses that have a target number of 
+## total reviews, good reviews, and bad reviews. This is too make sure the 
+## prediction was not being biased by a low review count.
+##
+## Parameters:
+## None
+##
+## Return:
+## None
+##
+#################################################################
 find_ids <- function() {
     print("first subset")
     target_businesses <- business[business$review_count >= 500, ]
@@ -101,8 +157,20 @@ find_ids <- function() {
     write.csv(ids, file = "ids.csv",row.names=FALSE)
 }
 
-#find_ids()
-
+#################################################################
+##
+## Description: This method determines the part of speech for each word in the
+## review text.
+##
+## Parameters:
+## None
+## x - Full review text
+## thisPOSregex - Filter to apply to tagged text.
+##
+## Return:
+## The full review text with each word tagged with it's POS and filtered by thisPOSregex. 
+##
+#################################################################
 extractPOS <- function(x, thisPOSregex) {
     x <- as.String(x)
     wordAnnotation <- annotate(x, list(Maxent_Sent_Token_Annotator(), Maxent_Word_Token_Annotator()))
@@ -115,6 +183,18 @@ extractPOS <- function(x, thisPOSregex) {
     untokenizedAndTagged
 }
 
+#################################################################
+##
+## Description: This method returns a sorted vector of business strengths.
+##
+## Parameters:
+## target_reviews - The set of reviews to use to determine strengths.
+## target_business - The specific business used to determine strengths.
+##
+## Return:
+## A vector of business strengths sorted by frequency.
+##
+#################################################################
 good <- function(target_reviews, target_business) {
     my_reviews <- target_reviews[target_reviews$stars > 3, ]
     ssize <- ifelse(dim(my_reviews)[1]>=number_raw_reviews, number_raw_reviews, dim(my_reviews)[1])
@@ -135,6 +215,18 @@ good <- function(target_reviews, target_business) {
     frequency
 }
 
+#################################################################
+##
+## Description: This method returns a sorted vector of business	weaknesses.
+##
+## Parameters:
+## target_reviews - The	set of reviews	to use to determine weaknesses.
+## target_business - The specific business used	  to determine weaknesses.
+##
+## Return:
+## A vector of business	weaknesses sorted by frequency.
+##
+#################################################################
 bad <- function(target_reviews, target_business) {
     my_reviews <- target_reviews[target_reviews$stars < 3, ]
     ssize <- ifelse(dim(my_reviews)[1]>=number_raw_reviews,number_raw_reviews,dim(my_reviews)[1])
@@ -154,26 +246,39 @@ bad <- function(target_reviews, target_business) {
     frequency <- sort(frequency, decreasing=TRUE)
     frequency
 }
-
+#################################################################
+##
+## Description: This method returns a list containing the sorted strengths and weaknesses
+## of a business.
+##
+## Parameters:
+## good - Vector of strengths
+## bad - vector of weaknesses.
+##
+## Return:
+## A list of business strengths and weaknesses sorted by frequency.
+##
+#################################################################
 normalize <- function(good, bad) {
-    # for(name in names(good)){
-    #    if(!(is.na(bad[name]))) {
-    #         if(good[name] >= bad[name]) {
-    #                good[name] = good[name] - bad[name]
-    #                bad[name] = 0
-    #            }
-    #            else
-    #            {
-    #                bad[name] = bad[name] - good[name]
-    #                good[name] = 0
-    #            }
-    #        }
-    #    }
     good <- sort(good, decreasing=TRUE)
     bad <- sort(bad, decreasing=TRUE)
     list(good, bad)
 }
 
+#################################################################
+##
+## Description: This method returns similarity score comparing the sampled
+## strengths verus the full text strengths.
+##
+## Parameters:
+## x - Full text strengths
+## y - Sampled text strengths
+##
+## Return:
+## The percentage of strengths in the sampled text that also occured in the 
+## full text.
+##
+#################################################################
 similarity <- function(x, y) {
     count <- 0
     names_x <- names(x)
@@ -181,6 +286,19 @@ similarity <- function(x, y) {
     100 * (count / length(y))
 }
 
+
+#################################################################
+##
+## Description: This method returns a sorted vector of business strengths.
+##
+## Parameters:
+## target_reviews - The set of reviews to use to determine strengths.
+## target_business - The specific business used to determine strengths.
+##
+## Return:
+## A vector of business strengths sorted by frequency.
+##
+#################################################################
 maven_good <- function(target_reviews, user_ids, target_business, rsize) {
     ssize <- 0
     frequency <- NA
@@ -210,7 +328,20 @@ maven_good <- function(target_reviews, user_ids, target_business, rsize) {
     list(frequency, ssize)
 }
 
-
+#################################################################
+##
+## Description: This method returns the number of good reviews in a set of user_ids.
+##
+## Parameters:
+## target_reviews - The subset of reviews to be examined.
+## user_ids - The user_ids within the subset of reviews.
+## target_business - The specific business.
+## rsize - Maximum size of review set 
+##
+## Return:
+## The number of good reviews within the set.
+##
+#################################################################
 good_size <- function(target_reviews, user_ids, target_business, rsize) {
     ssize <- 0
     frequency <- NA
@@ -223,6 +354,18 @@ good_size <- function(target_reviews, user_ids, target_business, rsize) {
     ssize
 }
 
+#################################################################
+##
+## Description: This method returns a sorted vector of business weaknesses.
+##
+## Parameters:
+## target_reviews - The set of reviews  to use to determine weaknesses.
+## target_business - The specific business used   to determine weaknesses.
+##
+## Return:
+## A vector of business weaknesses sorted by frequency.
+##
+#################################################################
 maven_bad <- function(target_reviews, user_ids, target_business, rsize) {
     
     ssize <- 0
@@ -255,6 +398,20 @@ maven_bad <- function(target_reviews, user_ids, target_business, rsize) {
     list(frequency, ssize)
 }
 
+#################################################################
+##
+## Description: This method returns the	number of bad reviews in a set	of user_ids.
+##
+## Parameters:
+## target_reviews - The	subset of reviews to be	examined.
+## user_ids - The user_ids within the subset of	reviews.
+## target_business - The specific business.
+## rsize - Maximum size	 of review set
+##
+## Return:
+## The number of bad reviews within the set.
+##
+#################################################################
 bad_size <- function(target_reviews, user_ids, target_business, rsize) {
     ssize <- 0
     frequency <- NA
@@ -268,20 +425,21 @@ bad_size <- function(target_reviews, user_ids, target_business, rsize) {
     ssize
 }
 
-plot < function(good, bad) {
-    wf <- data.frame(word=names(good), freq=good)   
-    p <- ggplot(subset(wf, freq>10), aes(word, freq))    
-    p <- p + geom_bar(stat="identity")   
-    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))   
-    p  
-    
-    wf <- data.frame(word=names(bad), freq=bad)   
-    p <- ggplot(subset(wf, freq>10), aes(word, freq))    
-    p <- p + geom_bar(stat="identity")   
-    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))   
-    p   
-}
-
+#################################################################
+##
+## Description: This method takes a set of reviews for a target business and
+## determines the popular, connected, maven, and random user ids from it.
+##
+## Parameters:
+## target_business - The specific target business.
+## reviews - The full set of reviews
+## user - The full set of user ids.
+##
+## Return:
+## A list of vectors containing the popular, connected, maven, and random
+## user ids
+##
+#################################################################
 splitids <- function(target_business, reviews, user) {
     target_reviews <- reviews[reviews$business_id == target_business$business_id, ]
     user_ids <- target_reviews$user_id
@@ -341,7 +499,20 @@ splitids <- function(target_business, reviews, user) {
          randuserids)
 }
 
-
+#################################################################
+##
+## Description: This method profiles similarity scores for popular, connected,
+## maven, and random heuristic on a specific business,
+##
+## Parameters:
+## target_business - The specific target business.
+## reviews - The full set of reviews
+## user	   - The full set of user ids.
+##
+## Return:
+## A vector of similarity scores for popular, connected, maven,	boosted, and random samples.
+##
+#################################################################
 profile <- function(target_business, reviews, user) {
     target_reviews <- reviews[reviews$business_id == target_business$business_id, ]
     user_ids <- target_reviews$user_id
@@ -460,6 +631,21 @@ profile <- function(target_business, reviews, user) {
 }
 
 
+#################################################################
+##
+## Description: This method profiles similarity	scores for popular, connected,
+## maven, boosted, and random heuristic on a specific business.
+##
+## Parameters:
+## target_business - The specific target business.
+## reviews - The full set of reviews
+## user    - The full set of user ids.
+## modelList - List of prediction models
+##
+## Return:
+## A vector of similarity scores for popular, connected, maven, boosted, and random samples.
+##
+#################################################################
 profile_pred <- function(target_business, reviews, user, modelList) {
     target_reviews <- reviews[reviews$business_id == target_business$business_id, ]
     user_ids <- target_reviews$user_id
@@ -651,6 +837,18 @@ profile_pred <- function(target_business, reviews, user, modelList) {
     retvec
 }
 
+#################################################################
+##
+## Description: This method does some initialization prior profiling a 
+## selected set of businesses and writing the results to a file.
+##
+## Parameters:
+## iterations - The number of businesses to process.
+##
+## Return:
+## None
+##
+#################################################################
 start <- function(iterations) {
     print("first subset")
     target_businesses <- business[business$review_count >= 500, ]
@@ -751,6 +949,19 @@ start <- function(iterations) {
     df
 }
 
+#################################################################
+##
+## Description: This method does some initialization prior profiling a	
+## selected set	of businesses and writing the results to a file. This
+## variant of the start() method includes boosting.
+##
+## Parameters:
+## iterations -	The number of businesses to process.
+##
+## Return:
+## None
+##
+#################################################################
 start_pred <- function(iterations) {
     modelList <- create_models()
     
@@ -827,6 +1038,18 @@ start_pred <- function(iterations) {
 }
 
 
+#################################################################
+##
+## Description: This method uses the training data to create models that will predict
+## the similarity score for each heuristic technique.
+##
+## Parameters:
+## None
+##
+## Return:
+## A list of prediction models for Popular, Connected, Maven, and Random sampling.
+##
+#################################################################
 create_models <- function() {
     good.mavenFit <- NA
     good.connFit <- NA
@@ -891,6 +1114,30 @@ create_models <- function() {
          bad.randomFit)
 }
 
+#################################################################
+##
+## Description: This method will generate the predicted similarity score for each
+## heuristic technique.
+##
+## Parameters:
+## modelList - A list of prediction models.
+## rating - The star rating of the business.
+## review.count - The total number of reviews. 
+## good.review.count - The total number of good reviews for the business. 
+## bad.review.count - The total number of unfavorable reviews for a business. 
+## good.maven.count - The total number of favorable maven reviews.
+## bad.maven.count - The total number of unfavorable maven reviews.
+## good.pop.count - The total number of favorable popular reviews.
+## bad.pop.count - The total number of unfavorable popular reviews.
+## good.conn.count - The total number of favorable connected reviews.
+## bad.conn.count - The total number of unfavorable connected reviews.
+## good.random.count - The total number of favorable random reviews. 
+## bad.random.count - The total number of unfavorable random reviews.
+##
+## Return:
+## A list of predicted similarity scores for Popular, Connected, Maven, and Random heuristics.
+##
+#################################################################
 predict_scores <- function(modelList, rating, review.count, good.review.count, bad.review.count, good.maven.count, bad.maven.count, good.pop.count, bad.pop.count, good.conn.count, bad.conn.count, good.random.count, bad.random.count) {
     
     good.mavenFit <- modelList[[1]]
